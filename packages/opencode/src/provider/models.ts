@@ -165,10 +165,12 @@ export async function refresh(force = false) {
 
 if (!Flag.OPENCODE_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
   void refresh()
-  setInterval(
+  const modelsRefreshInterval = setInterval(
     async () => {
       await refresh()
     },
     60 * 1000 * 60,
-  ).unref()
+  )
+  modelsRefreshInterval.unref()
+  process.on("exit", () => clearInterval(modelsRefreshInterval))
 }
