@@ -49,14 +49,28 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
   )
 
   const diagnostics = new Map<string, Diagnostic[]>()
+  const MAX_DIAGNOSTIC_FILES = 200
+  const diagnosticOrder: string[] = []
   connection.onNotification("textDocument/publishDiagnostics", (params) => {
     const filePath = Filesystem.normalizePath(fileURLToPath(params.uri))
     l.info("textDocument/publishDiagnostics", {
       path: filePath,
       count: params.diagnostics.length,
     })
+    if (params.diagnostics.length === 0) {
+      diagnostics.delete(filePath)
+      const idx = diagnosticOrder.indexOf(filePath)
+      if (idx !== -1) diagnosticOrder.splice(idx, 1)
+      Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
+      return
+    }
     const exists = diagnostics.has(filePath)
     diagnostics.set(filePath, params.diagnostics)
+    if (!exists) diagnosticOrder.push(filePath)
+    if (diagnosticOrder.length > MAX_DIAGNOSTIC_FILES) {
+      const oldest = diagnosticOrder.shift()!
+      diagnostics.delete(oldest)
+    }
     if (!exists && input.serverID === "typescript") return
     Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
   })
@@ -135,6 +149,17 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
   const files: {
     [path: string]: number
   } = {}
+  const MAX_OPEN_FILES = 1000
+  const fileOrder: string[] = []
+
+  function trackOpen(filePath: string) {
+    if (files[filePath] !== undefined && fileOrder.includes(filePath)) return
+    fileOrder.push(filePath)
+    if (fileOrder.length > MAX_OPEN_FILES) {
+      const oldest = fileOrder.shift()!
+      delete files[oldest]
+    }
+  }
 
   const result = {
     root: input.root,
@@ -191,6 +216,8 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
 
         log.info("textDocument/didOpen", input)
         diagnostics.delete(input.path)
+        const diagIdx = diagnosticOrder.indexOf(input.path)
+        if (diagIdx !== -1) diagnosticOrder.splice(diagIdx, 1)
         await connection.sendNotification("textDocument/didOpen", {
           textDocument: {
             uri: pathToFileURL(input.path).href,
@@ -200,6 +227,7 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
           },
         })
         files[input.path] = 0
+        trackOpen(input.path)
         return
       },
     },
@@ -240,6 +268,8 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
       connection.end()
       connection.dispose()
       await Process.stop(input.server.process)
+      diagnostics.clear()
+      diagnosticOrder.length = 0
       l.info("shutdown")
     },
   }
