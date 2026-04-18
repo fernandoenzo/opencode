@@ -128,6 +128,7 @@ export const layer = Layer.effect(
         } catch {}
       }
       session.subscribers.clear()
+      session.buffer = ""
     }
 
     const state = yield* InstanceState.make<State>(
