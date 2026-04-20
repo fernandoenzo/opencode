@@ -1,9 +1,9 @@
 import type * as SDK from "@opencode-ai/sdk/v2"
-import { Effect, Exit, Layer, Option, Schema, Scope, Context, Stream } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Scope, Context } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Account } from "@/account"
 import { Bus } from "@/bus"
-import { InstanceState } from "@/effect"
+import { EffectBridge, InstanceState } from "@/effect"
 import { Provider } from "@/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session"
@@ -40,6 +40,7 @@ export type Share = typeof ShareSchema.Type
 type State = {
   queue: Map<string, { data: Map<string, Data> }>
   scope: Scope.Closeable
+  unsubs: (() => void)[]
 }
 
 type Data =
@@ -70,6 +71,7 @@ export interface Interface {
   readonly request: () => Effect.Effect<Req, unknown>
   readonly create: (sessionID: SessionID) => Effect.Effect<Share, unknown>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, unknown>
+  readonly dispose: () => Effect.Effect<void, never>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ShareNext") {}
@@ -107,6 +109,7 @@ function key(item: Data) {
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const bridge = yield* EffectBridge.make()
     const account = yield* Account.Service
     const bus = yield* Bus.Service
     const cfg = yield* Config.Service
@@ -143,63 +146,61 @@ export const layer = Layer.effect(
 
     const state: InstanceState.InstanceState<State> = yield* InstanceState.make<State>(
       Effect.fn("ShareNext.state")(function* (_ctx) {
-        const cache: State = { queue: new Map(), scope: yield* Scope.make() }
+        const cache: State = { queue: new Map(), scope: yield* Scope.make(), unsubs: [] }
 
         yield* Effect.addFinalizer(() =>
           Scope.close(cache.scope, Exit.void).pipe(
             Effect.andThen(
               Effect.sync(() => {
+                for (const unsub of cache.unsubs) unsub()
+                cache.unsubs.length = 0
                 cache.queue.clear()
               }),
             ),
           ),
         )
 
-        if (disabled) return cache
-
-        const watch = <D extends { type: string }>(
-          def: D,
-          fn: (evt: { properties: any }) => Effect.Effect<void, unknown>,
-        ) =>
-          bus.subscribe(def as never).pipe(
-            Stream.runForEach((evt) =>
-              fn(evt).pipe(
-                Effect.catchCause((cause) =>
-                  Effect.sync(() => {
-                    log.error("share subscriber failed", { type: def.type, cause })
-                  }),
-                ),
-              ),
-            ),
-            Effect.forkScoped,
-          )
-
-        yield* watch(Session.Event.Updated, (evt) =>
-          Effect.gen(function* () {
-            const info = yield* session.get(evt.properties.sessionID)
-            yield* sync(info.id, [{ type: "session", data: info }])
-          }),
-        )
-        yield* watch(MessageV2.Event.Updated, (evt) =>
-          Effect.gen(function* () {
-            const info = evt.properties.info
-            yield* sync(info.sessionID, [{ type: "message", data: info }])
-            if (info.role !== "user") return
-            const model = yield* provider.getModel(info.model.providerID, info.model.modelID)
-            yield* sync(info.sessionID, [{ type: "model", data: [model] }])
-          }),
-        )
-        yield* watch(MessageV2.Event.PartUpdated, (evt) =>
-          sync(evt.properties.part.sessionID, [{ type: "part", data: evt.properties.part }]),
-        )
-        yield* watch(Session.Event.Diff, (evt) =>
-          sync(evt.properties.sessionID, [{ type: "session_diff", data: evt.properties.diff }]),
-        )
-        yield* watch(Session.Event.Deleted, (evt) => remove(evt.properties.sessionID))
-
         return cache
       }),
     )
+
+    function watch<D extends { type: string }>(
+      def: D,
+      fn: (evt: { properties: any }) => Effect.Effect<void, unknown>,
+    ) {
+      return Effect.gen(function* () {
+        const unsub = yield* bus.subscribeCallback(def as never, (evt) =>
+          bridge.promise(
+            fn(evt).pipe(
+              Effect.catchCause((cause) =>
+                Effect.sync(() => {
+                  log.error("share subscriber failed", { type: def.type, cause })
+                }),
+              ),
+            ),
+          ),
+        )
+        const s = yield* InstanceState.get(state)
+        s.unsubs.push(unsub)
+      })
+    }
+
+    const disposeImpl = Effect.fn("ShareNext.dispose")(function* () {
+      const s = yield* InstanceState.get(state)
+      for (const unsub of s.unsubs) unsub()
+      s.unsubs.length = 0
+      s.queue.clear()
+      yield* Scope.close(s.scope, Exit.void)
+      s.scope = yield* Scope.make()
+    })
+    const dispose = (): Effect.Effect<void, never> =>
+      disposeImpl().pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            log.error("share dispose failed", { cause })
+          }),
+        ),
+      )
 
     const request = Effect.fn("ShareNext.request")(function* () {
       const headers: Record<string, string> = {}
@@ -279,7 +280,29 @@ export const layer = Layer.effect(
 
     const init = Effect.fn("ShareNext.init")(function* () {
       if (disabled) return
-      yield* InstanceState.get(state)
+      yield* dispose()
+      yield* watch(Session.Event.Updated, (evt) =>
+        Effect.gen(function* () {
+          const info = yield* session.get(evt.properties.sessionID)
+          yield* sync(info.id, [{ type: "session", data: info }])
+        }),
+      )
+      yield* watch(MessageV2.Event.Updated, (evt) =>
+        Effect.gen(function* () {
+          const info = evt.properties.info
+          yield* sync(info.sessionID, [{ type: "message", data: info }])
+          if (info.role !== "user") return
+          const model = yield* provider.getModel(info.model.providerID, info.model.modelID)
+          yield* sync(info.sessionID, [{ type: "model", data: [model] }])
+        }),
+      )
+      yield* watch(MessageV2.Event.PartUpdated, (evt) =>
+        sync(evt.properties.part.sessionID, [{ type: "part", data: evt.properties.part }]),
+      )
+      yield* watch(Session.Event.Diff, (evt) =>
+        sync(evt.properties.sessionID, [{ type: "session_diff", data: evt.properties.diff }]),
+      )
+      yield* watch(Session.Event.Deleted, (evt) => remove(evt.properties.sessionID))
     })
 
     const url = Effect.fn("ShareNext.url")(function* () {
@@ -334,7 +357,7 @@ export const layer = Layer.effect(
       yield* db((db) => db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run())
     })
 
-    return Service.of({ init, url, request, create, remove })
+    return Service.of({ init, url, request, create, remove, dispose })
   }),
 )
 
