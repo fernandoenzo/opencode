@@ -30,9 +30,19 @@ export namespace Shell {
     }
 
     try {
+      const alive = () => {
+        if (opts?.exited?.()) return false
+        try {
+          process.kill(-pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      }
+
       process.kill(-pid, "SIGTERM")
       await sleep(SIGKILL_TIMEOUT_MS)
-      if (!opts?.exited?.()) {
+      if (alive()) {
         process.kill(-pid, "SIGKILL")
       }
     } catch (_e) {
