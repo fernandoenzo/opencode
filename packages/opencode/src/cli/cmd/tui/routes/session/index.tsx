@@ -11,6 +11,7 @@ import {
   Show,
   Switch,
   useContext,
+  onCleanup,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import path from "path"
@@ -203,7 +204,7 @@ export function Session() {
   // Handle initial prompt from fork
   let seeded = false
   let lastSwitch: string | undefined = undefined
-  event.on("message.part.updated", (evt) => {
+  const unsubPartUpdated = event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
     if (part.type !== "tool") return
     if (part.sessionID !== route.sessionID) return
@@ -232,7 +233,7 @@ export function Session() {
   const dialog = useDialog()
   const renderer = useRenderer()
 
-  event.on("session.status", (evt) => {
+  const unsubStatus = event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
     if (evt.properties.status.type !== "retry") return
     if (evt.properties.status.message !== SessionRetry.GO_UPSELL_MESSAGE) return
@@ -248,6 +249,8 @@ export function Session() {
       kv.set(GO_UPSELL_LAST_SEEN_AT, Date.now())
     })
   })
+
+  onCleanup(() => { unsubPartUpdated(); unsubStatus() })
 
   // Allow exit when in child session (prompt is hidden)
   const exit = useExit()
