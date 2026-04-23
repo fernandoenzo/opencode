@@ -212,6 +212,9 @@ export const layer = Layer.effect(
         yield* Effect.addFinalizer(() =>
           Effect.promise(async () => {
             await Promise.all(s.clients.map((client) => client.shutdown()))
+            s.clients = []
+            s.broken.clear()
+            s.spawning.clear()
           }),
         )
 
