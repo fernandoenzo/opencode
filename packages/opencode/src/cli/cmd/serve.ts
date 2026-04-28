@@ -15,7 +15,15 @@ export const ServeCommand = cmd({
     const server = await Server.listen(opts)
     console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
 
-    await new Promise(() => {})
+    await new Promise<void>((resolve) => {
+      const shutdown = () => resolve()
+      process.on("SIGTERM", shutdown)
+      process.on("SIGINT", shutdown)
+    })
+    try {
+      const { Instance } = await import("../../project/instance")
+      await Promise.race([Instance.disposeAll(), new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
+    } catch {}
     await server.stop()
   },
 })
