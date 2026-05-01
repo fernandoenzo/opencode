@@ -113,4 +113,12 @@ export class ACPSessionManager {
     this.sessions.set(sessionId, session)
     return session
   }
+
+  delete(sessionId: string) {
+    this.sessions.delete(sessionId)
+  }
+
+  clear() {
+    this.sessions.clear()
+  }
 }
