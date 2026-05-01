@@ -239,9 +239,13 @@ try {
   }
   process.exitCode = 1
 } finally {
+  try {
+    const { Instance } = await import("./project/instance")
+    await Promise.race([Instance.disposeAll(), new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
+  } catch {}
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
   // run using `docker run --init`.
   // Explicitly exit to avoid any hanging subprocesses.
-  process.exit()
+  process.exit(process.exitCode ?? 0)
 }
