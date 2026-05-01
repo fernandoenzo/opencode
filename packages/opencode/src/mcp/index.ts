@@ -345,6 +345,8 @@ export const layer = Layer.effect(
                   })
                   .pipe(Effect.ignore, Effect.as(undefined))
               } else {
+                const existing = pendingOAuthTransports.get(key)
+                if (existing) existing.close?.().catch(() => {})
                 pendingOAuthTransports.set(key, transport)
                 lastStatus = { status: "needs_auth" as const }
                 return bus
@@ -540,6 +542,9 @@ export const layer = Layer.effect(
                 }),
               { concurrency: "unbounded" },
             )
+            for (const transport of pendingOAuthTransports.values()) {
+              transport.close?.().catch(() => {})
+            }
             pendingOAuthTransports.clear()
           }),
         )
@@ -778,6 +783,8 @@ export const layer = Layer.effect(
       }).pipe(
         Effect.catch((error) => {
           if (error instanceof UnauthorizedError && capturedUrl) {
+            const existing = pendingOAuthTransports.get(mcpName)
+            if (existing) existing.close?.().catch(() => {})
             pendingOAuthTransports.set(mcpName, transport)
             return Effect.succeed({ authorizationUrl: capturedUrl.toString(), oauthState } satisfies AuthResult)
           }
@@ -861,6 +868,8 @@ export const layer = Layer.effect(
       }
 
       yield* auth.clearCodeVerifier(mcpName)
+      const existingTransport = pendingOAuthTransports.get(mcpName)
+      if (existingTransport) existingTransport.close?.().catch(() => {})
       pendingOAuthTransports.delete(mcpName)
 
       const mcpConfig = yield* getMcpConfig(mcpName)
@@ -872,6 +881,8 @@ export const layer = Layer.effect(
     const removeAuth = Effect.fn("MCP.removeAuth")(function* (mcpName: string) {
       yield* auth.remove(mcpName)
       McpOAuthCallback.cancelPending(mcpName)
+      const pendingTransport = pendingOAuthTransports.get(mcpName)
+      if (pendingTransport) pendingTransport.close?.().catch(() => {})
       pendingOAuthTransports.delete(mcpName)
       log.info("removed oauth credentials", { mcpName })
     })
