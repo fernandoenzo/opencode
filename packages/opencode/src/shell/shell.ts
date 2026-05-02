@@ -41,16 +41,26 @@ export async function killTree(proc: ChildProcess, opts?: { exited?: () => boole
     return
   }
 
+  const alive = () => {
+    if (opts?.exited?.()) return false
+    try {
+      process.kill(-pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   try {
     process.kill(-pid, "SIGTERM")
     await sleep(SIGKILL_TIMEOUT_MS)
-    if (!opts?.exited?.()) {
+    if (alive()) {
       process.kill(-pid, "SIGKILL")
     }
   } catch (_e) {
     proc.kill("SIGTERM")
     await sleep(SIGKILL_TIMEOUT_MS)
-    if (!opts?.exited?.()) {
+    if (alive()) {
       proc.kill("SIGKILL")
     }
   }
