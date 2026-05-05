@@ -239,9 +239,22 @@ try {
   }
   process.exitCode = 1
 } finally {
+  try {
+    const { AppRuntime } = await import("./effect/app-runtime")
+    const { InstanceStore } = await import("./project/instance-store")
+    const { Effect, Duration } = await import("effect")
+    await Promise.race([
+      AppRuntime.runPromise(
+        InstanceStore.Service.use((store) =>
+          store.disposeAll().pipe(Effect.timeout(Duration.seconds(5)), Effect.catch(() => Effect.void)),
+        ),
+      ),
+      new Promise((r) => setTimeout(r, 5000)),
+    ]).catch(() => {})
+  } catch {}
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
   // run using `docker run --init`.
   // Explicitly exit to avoid any hanging subprocesses.
-  process.exit()
+  process.exit(process.exitCode ?? 0)
 }
