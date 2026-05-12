@@ -3,6 +3,7 @@ import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { disposeAllInstances } from "../../project/instance-runtime"
 
 export const ServeCommand = effectCmd({
   command: "serve",
@@ -19,6 +20,15 @@ export const ServeCommand = effectCmd({
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
 
-    yield* Effect.never
+    yield* Effect.callback<void>((resume) => {
+      const shutdown = () => resume(Effect.void)
+      process.on("SIGTERM", shutdown)
+      process.on("SIGINT", shutdown)
+    })
+    yield* Effect.race(
+      Effect.promise(() => disposeAllInstances()),
+      Effect.sleep("5 seconds"),
+    ).pipe(Effect.catch(() => Effect.void))
+    yield* Effect.promise(() => server.stop())
   }),
 })
