@@ -1542,6 +1542,14 @@ export class Agent implements ACPAgent {
       this.sessionManager.setMode(sessionId, lastUser.agent)
     }
   }
+
+  dispose() {
+    this.eventAbort.abort()
+    this.sessionManager.clear()
+    this.shellSnapshots.clear()
+    this.toolStarts.clear()
+    this.permissionQueues.clear()
+  }
 }
 
 function toToolKind(toolName: string): ToolKind {
