@@ -20,15 +20,20 @@ export function client<T extends Definition>(target: {
   postMessage: (data: string) => void | null
   onmessage: ((this: Worker, ev: MessageEvent<any>) => any) | null
 }) {
-  const pending = new Map<number, (result: any) => void>()
+  const MAX_PENDING = 10_000
+  type Entry = {
+    resolve: (result: any) => void
+    reject: (err: unknown) => void
+  }
+  const pending = new Map<number, Entry>()
   const listeners = new Map<string, Set<(data: any) => void>>()
   let id = 0
   target.onmessage = async (evt) => {
     const parsed = JSON.parse(evt.data)
     if (parsed.type === "rpc.result") {
-      const resolve = pending.get(parsed.id)
-      if (resolve) {
-        resolve(parsed.result)
+      const entry = pending.get(parsed.id)
+      if (entry) {
+        entry.resolve(parsed.result)
         pending.delete(parsed.id)
       }
     }
@@ -44,9 +49,24 @@ export function client<T extends Definition>(target: {
   return {
     call<Method extends keyof T>(method: Method, input: Parameters<T[Method]>[0]): Promise<ReturnType<T[Method]>> {
       const requestId = id++
-      return new Promise((resolve) => {
-        pending.set(requestId, resolve)
-        target.postMessage(JSON.stringify({ type: "rpc.request", method, input, id: requestId }))
+      return new Promise((resolve, reject) => {
+        pending.set(requestId, { resolve, reject })
+        if (pending.size > MAX_PENDING) {
+          const oldestId = pending.keys().next().value
+          if (oldestId !== undefined && oldestId !== requestId) {
+            const oldest = pending.get(oldestId)
+            if (oldest) {
+              pending.delete(oldestId)
+              oldest.reject(new Error(`RPC evicted: pending limit (${MAX_PENDING}) exceeded`))
+            }
+          }
+        }
+        try {
+          target.postMessage(JSON.stringify({ type: "rpc.request", method, input, id: requestId }))
+        } catch (err) {
+          pending.delete(requestId)
+          reject(err)
+        }
       })
     },
     on<Data>(event: string, handler: (data: Data) => void) {
