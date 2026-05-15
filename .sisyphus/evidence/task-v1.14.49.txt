@@ -1,0 +1,25 @@
+=== v1.14.49-fixed Evidence ===
+Date: 2026-05-14T00:54:12+02:00
+
+Commits (7 total):
+1e5cd38a6 fix(cli): ensure trailing newline after --help output
+cc56fb5e9 fix(sdk/task): cap event queue and deallocate ephemeral subagent sessions
+798ed005e fix(subprocess/rpc): cleanup timers, buffers, OAuth transports, zombies
+b47f005b1 fix(session/share): compaction frees parts, dispose wiring, graceful shutdown
+ba1d2f2ba fix(acp): add session/agent disposal methods
+a84c82262 fix(lsp): bound diagnostics and open-files with FIFO eviction
+8d9e5caff fix(tui): cleanup event listeners, timers, and SIGHUP handler
+
+Typecheck: PASSED (0 errors)
+Binary: /dev/shm/opencode (x86-64 ELF)
+Version: 1.14.49-patched
+
+Tag: v1.14.49-fixed
+Remote: git@github.com:fernandoenzo/opencode.git
+
+Manual conflict resolutions:
+- Patch 0001: keybind.tsx DELETED in v1.14.49 (skipped), app.tsx/prompt/session/sync/exit/project adapted to current structure
+- Patch 0003: agent.ts merged with v1.14.49's existing closeSession(CloseSessionRequest); duplicate closeSession removed, bashSnapshots→shellSnapshots
+- Patch 0004: serve.ts adapted from promise-based to Effect.callback with InstanceStore.Service, index.ts uses disposeAllInstances from instance-runtime
+- Patch 0005: models.ts SKIPPED (setInterval replaced by Effect.forkScoped in v1.14.33+)
+- All 6 patches + 1 trailing newline fix = 7 commits total

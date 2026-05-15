@@ -10,8 +10,8 @@ import {
   onMount,
   Show,
   Switch,
-  untrack,
   useContext,
+  onCleanup,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import path from "path"
@@ -280,7 +280,7 @@ export function Session() {
   })
 
   let lastSwitch: string | undefined = undefined
-  event.on("message.part.updated", (evt) => {
+  const unsubPartUpdated = event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
     if (part.type !== "tool") return
     if (part.sessionID !== route.sessionID) return
@@ -310,7 +310,7 @@ export function Session() {
   const dialog = useDialog()
   const renderer = useRenderer()
 
-  event.on("session.status", (evt) => {
+  const unsubStatus = event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
     if (evt.properties.status.type !== "retry") return
     if (!evt.properties.status.action) return
@@ -329,6 +329,8 @@ export function Session() {
       kv.set(keys.lastSeenAt, Date.now())
     })
   })
+
+  onCleanup(() => { unsubPartUpdated(); unsubStatus() })
 
   const exit = useExit()
 
