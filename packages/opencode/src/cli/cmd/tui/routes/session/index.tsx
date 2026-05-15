@@ -10,6 +10,7 @@ import {
   onMount,
   Show,
   Switch,
+  untrack,
   useContext,
   onCleanup,
 } from "solid-js"
