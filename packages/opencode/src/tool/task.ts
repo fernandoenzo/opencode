@@ -316,6 +316,12 @@ export const TaskTool = Tool.define(
         (_, exit) =>
           Effect.gen(function* () {
             if (Exit.hasInterrupts(exit)) yield* cancel
+            // When we created a fresh session for this subagent (no pre-existing
+            // session was loaded), release it so its messages/parts/state are
+            // no longer retained in the sync store.
+            if (!session) {
+              yield* sessions.remove(nextSession.id).pipe(Effect.catchCause(() => Effect.void))
+            }
           }).pipe(
             Effect.ensuring(
               Effect.sync(() => {
