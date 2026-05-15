@@ -331,6 +331,8 @@ export const layer = Layer.effect(
         for (const part of toPrune) {
           if (part.state.status === "completed") {
             part.state.time.compacted = Date.now()
+            part.state.output = ""
+            part.state.attachments = undefined
             yield* session.updatePart(part)
           }
         }
