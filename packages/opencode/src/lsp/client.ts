@@ -155,17 +155,49 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
 
   const pushDiagnostics = new Map<string, Diagnostic[]>()
   const pullDiagnostics = new Map<string, Diagnostic[]>()
+  const MAX_DIAGNOSTIC_FILES = 200
+  const diagnosticOrder: string[] = []
   const published = new Map<string, { at: number; version?: number }>()
   const diagnosticRegistrations = new Map<string, CapabilityRegistration>()
   const registrationListeners = new Set<() => void>()
   const mergedDiagnostics = (filePath: string) =>
     dedupeDiagnostics([...(pushDiagnostics.get(filePath) ?? []), ...(pullDiagnostics.get(filePath) ?? [])])
   const updatePushDiagnostics = (filePath: string, next: Diagnostic[]) => {
-    pushDiagnostics.set(filePath, next)
+    if (next.length === 0) {
+      pushDiagnostics.delete(filePath)
+      if (!pullDiagnostics.has(filePath)) {
+        const idx = diagnosticOrder.indexOf(filePath)
+        if (idx !== -1) diagnosticOrder.splice(idx, 1)
+      }
+    } else {
+      const existed = pushDiagnostics.has(filePath) || pullDiagnostics.has(filePath)
+      pushDiagnostics.set(filePath, next)
+      if (!existed) diagnosticOrder.push(filePath)
+      if (diagnosticOrder.length > MAX_DIAGNOSTIC_FILES) {
+        const oldest = diagnosticOrder.shift()!
+        pushDiagnostics.delete(oldest)
+        pullDiagnostics.delete(oldest)
+      }
+    }
     Bus.publish(Event.Diagnostics, { path: filePath, serverID: input.serverID })
   }
   const updatePullDiagnostics = (filePath: string, next: Diagnostic[]) => {
-    pullDiagnostics.set(filePath, next)
+    if (next.length === 0) {
+      pullDiagnostics.delete(filePath)
+      if (!pushDiagnostics.has(filePath)) {
+        const idx = diagnosticOrder.indexOf(filePath)
+        if (idx !== -1) diagnosticOrder.splice(idx, 1)
+      }
+    } else {
+      const existed = pushDiagnostics.has(filePath) || pullDiagnostics.has(filePath)
+      pullDiagnostics.set(filePath, next)
+      if (!existed) diagnosticOrder.push(filePath)
+      if (diagnosticOrder.length > MAX_DIAGNOSTIC_FILES) {
+        const oldest = diagnosticOrder.shift()!
+        pushDiagnostics.delete(oldest)
+        pullDiagnostics.delete(oldest)
+      }
+    }
   }
   const emitRegistrationChange = () => {
     for (const listener of [...registrationListeners]) listener()
@@ -186,7 +218,14 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
       version: typeof params.version === "number" ? params.version : undefined,
     })
     if (shouldSeedDiagnosticsOnFirstPush(input.serverID) && !pushDiagnostics.has(filePath)) {
+      const existed = pullDiagnostics.has(filePath)
       pushDiagnostics.set(filePath, params.diagnostics)
+      if (!existed) diagnosticOrder.push(filePath)
+      if (diagnosticOrder.length > MAX_DIAGNOSTIC_FILES) {
+        const oldest = diagnosticOrder.shift()!
+        pushDiagnostics.delete(oldest)
+        pullDiagnostics.delete(oldest)
+      }
       return
     }
     updatePushDiagnostics(filePath, params.diagnostics)
@@ -290,6 +329,17 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
   }
 
   const files: Record<string, { version: number; text: string }> = {}
+  const MAX_OPEN_FILES = 1000
+  const fileOrder: string[] = []
+
+  function trackOpen(filePath: string) {
+    if (files[filePath] !== undefined && fileOrder.includes(filePath)) return
+    fileOrder.push(filePath)
+    if (fileOrder.length > MAX_OPEN_FILES) {
+      const oldest = fileOrder.shift()!
+      delete files[oldest]
+    }
+  }
 
   // --- Diagnostic helpers ---
 
@@ -637,6 +687,8 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
         logger.info("textDocument/didOpen", request)
         pushDiagnostics.delete(request.path)
         pullDiagnostics.delete(request.path)
+        const diagIdx = diagnosticOrder.indexOf(request.path)
+        if (diagIdx !== -1) diagnosticOrder.splice(diagIdx, 1)
         await connection.sendNotification("textDocument/didOpen", {
           textDocument: {
             uri: pathToFileURL(request.path).href,
@@ -646,6 +698,7 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
           },
         })
         files[request.path] = { version: 0, text }
+        trackOpen(request.path)
         return 0
       },
     },
@@ -676,6 +729,9 @@ export async function create(input: { serverID: string; server: LSPServer.Handle
       connection.end()
       connection.dispose()
       await Process.stop(input.server.process)
+      pushDiagnostics.clear()
+      pullDiagnostics.clear()
+      diagnosticOrder.length = 0
       logger.info("shutdown")
     },
   }
