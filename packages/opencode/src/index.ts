@@ -247,7 +247,7 @@ try {
 } finally {
   try {
     const { disposeAllInstances } = await import("./project/instance-runtime")
-    await disposeAllInstances()
+    await Promise.race([disposeAllInstances(), new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
   } catch {}
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
