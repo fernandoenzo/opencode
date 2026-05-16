@@ -19,6 +19,19 @@ export const ServeCommand = effectCmd({
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
 
-    yield* Effect.never
+    yield* Effect.callback<void>((resume) => {
+      const shutdown = () => resume(Effect.void)
+      process.on("SIGTERM", shutdown)
+      process.on("SIGINT", shutdown)
+      return Effect.sync(() => {
+        process.off("SIGTERM", shutdown)
+        process.off("SIGINT", shutdown)
+      })
+    })
+    try {
+      const { disposeAllInstances } = yield* Effect.promise(() => import("../../project/instance-runtime"))
+      yield* Effect.race(Effect.promise(() => disposeAllInstances()), Effect.sleep("5 seconds"))
+    } catch {}
+    yield* Effect.promise(() => server.stop())
   }),
 })
