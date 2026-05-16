@@ -1547,6 +1547,7 @@ export class Agent implements ACPAgent {
     this.sessionManager.clear()
     this.toolStarts.clear()
     this.permissionQueues.clear()
+    this.shellSnapshots.clear()
   }
 }
 

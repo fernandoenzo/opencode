@@ -7,6 +7,7 @@ import type {
   SessionMessageAssistantTool,
 } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
+import { onCleanup } from "solid-js"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
 
@@ -70,7 +71,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
       )
     }
 
-    event.subscribe((event) => {
+    const unsubSyncV2 = event.subscribe((event) => {
       switch (event.type) {
         case "session.next.prompted": {
           update(event.properties.sessionID, (draft) => {
@@ -284,6 +285,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
           break
       }
     })
+    onCleanup(() => { unsubSyncV2() })
 
     const result = {
       data: store,
