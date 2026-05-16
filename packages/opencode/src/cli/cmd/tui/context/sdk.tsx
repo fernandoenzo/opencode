@@ -38,6 +38,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }>()
 
     let queue: GlobalEvent[] = []
+    const MAX_QUEUE = 1000
     let timer: Timer | undefined
     let last = 0
     const retryDelay = 1000
@@ -58,6 +59,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     const handleEvent = (event: GlobalEvent) => {
+      if (queue.length >= MAX_QUEUE) {
+        // UI is falling behind - drop oldest events to prevent unbounded growth.
+        queue.splice(0, queue.length - MAX_QUEUE + 1)
+      }
       queue.push(event)
       const elapsed = Date.now() - last
 
