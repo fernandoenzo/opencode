@@ -1,4 +1,5 @@
 import { useEvent } from "@tui/context/event"
+import { onCleanup } from "solid-js"
 import type {
   SessionMessage,
   SessionMessageAssistant,
@@ -70,7 +71,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
       )
     }
 
-    event.subscribe((event) => {
+    const unsubSyncV2 = event.subscribe((event) => {
       switch (event.type) {
         case "session.next.prompted": {
           update(event.properties.sessionID, (draft) => {
@@ -284,6 +285,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
           break
       }
     })
+    onCleanup(() => { unsubSyncV2() })
 
     const result = {
       data: store,

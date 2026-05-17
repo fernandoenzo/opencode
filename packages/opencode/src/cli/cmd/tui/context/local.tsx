@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { useRoute } from "@tui/context/route"
@@ -437,9 +437,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
       }
 
-      event.on("session.deleted", (evt) => {
+      const unsubSessionDeleted = event.on("session.deleted", (evt) => {
         prune(evt.properties.info.id)
       })
+      onCleanup(() => unsubSessionDeleted())
 
       return {
         get ready() {
