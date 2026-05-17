@@ -1542,7 +1542,7 @@ export class Agent implements ACPAgent {
     }
   }
 
-  closeSession(sessionID: string) {
+  closeSessionInternal(sessionID: string) {
     this.sessionManager.delete(sessionID)
     this.permissionQueues.delete(sessionID)
   }

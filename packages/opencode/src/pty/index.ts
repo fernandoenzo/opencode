@@ -125,8 +125,6 @@ export const layer = Layer.effect(
       session.subscribers.clear()
       session.buffer = ""
     }
-      session.subscribers.clear()
-    }
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Pty.state")(function* (ctx) {

@@ -21,14 +21,13 @@ export const ServeCommand = effectCmd({
 
     yield* Effect.race(
       Effect.callback<void>((resume) => {
-        const shutdown = () => resume(void 0)
+        const shutdown = () => resume(Effect.void)
         process.on("SIGTERM", shutdown)
         process.on("SIGINT", shutdown)
-        return (sync) => {
+        return Effect.sync(() => {
           process.off("SIGTERM", shutdown)
           process.off("SIGINT", shutdown)
-          sync(void 0)
-        }
+        })
       }),
       Effect.never,
     )
