@@ -122,11 +122,9 @@ export const layer = Layer.effect(
       try {
         session.process.kill()
       } catch {}
-      for (const [sub, ws] of session.subscribers.entries()) {
-        try {
-          if (sock(ws) === sub) ws.close()
-        } catch {}
-      }
+      session.subscribers.clear()
+      session.buffer = ""
+    }
       session.subscribers.clear()
     }
 
