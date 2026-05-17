@@ -315,6 +315,11 @@ export const TaskTool = Tool.define(
         () =>
           Effect.gen(function* () {
             const text = yield* runTask()
+
+            if (!session) {
+              yield* sessions.remove(nextSession.id).pipe(Effect.catchCause(() => Effect.void))
+            }
+
             return {
               title: params.description,
               metadata,
